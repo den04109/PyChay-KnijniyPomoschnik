@@ -4,8 +4,7 @@ import re
 from collections import Counter, namedtuple
 
 from llm import chat, MODEL_FAST, MODEL_LARGE
-
-books_folder = "files"
+from paths import BOOKS_DIR
 
 GLOBAL_SYSTEM_PROMPT = """
 Ты — эрудированный литературный эксперт. Твоя задача — дать прямой ответ.
@@ -302,7 +301,7 @@ def test_answer(question, titles_list=None):
     question_lower = question.lower()
     force_local = any(keyword in question_lower for keyword in local_keywords)
 
-    local_context = retrieve(question, books_folder)
+    local_context = retrieve(question, BOOKS_DIR)
 
     if force_local and not local_context:
         return "В загруженных книгах нет информации по этому вопросу."

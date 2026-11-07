@@ -5,6 +5,7 @@ from pyexpat.errors import messages
 from sqlalchemy.dialects.oracle.dictionary import all_users
 from sqlalchemy.testing.suite.test_reflection import users
 from ai import test_answer, open_file_to_research_origin, decode_text
+from paths import BOOKS_DIR, TEMP_DIR, DB_PATH, ensure_dirs, resolve_book_path, clean_filename
 from data import db_session
 from data.books import Book
 from data.queries import Query
@@ -16,6 +17,8 @@ from flask_login import current_user, LoginManager, login_user, login_required, 
 from flask import request
 from flask_socketio import SocketIO, emit
 import time
+
+ensure_dirs()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = '1234'
@@ -173,8 +176,9 @@ def add_book():
     if form.validate_on_submit():
         db_sess = db_session.create_session()
         file = form.file.data
+        original_name = os.path.basename(file.filename.replace('\\', '/'))
 
-        if not file.filename.lower().endswith('.txt'):
+        if not original_name.lower().endswith('.txt'):
             return render_template(
                 'add_book.html',
                 form=form,
@@ -183,16 +187,18 @@ def add_book():
 
         text = decode_text(file.read())
 
-        temp_path = os.path.join('local_file_storage', file.filename)
+        temp_path = os.path.join(TEMP_DIR, original_name)
         with open(temp_path, 'w', encoding='utf-8') as f:
             f.write(text)
 
-        new_title = file.filename
+        new_title = original_name
 
         if form.auto_name.data:
             new_title = open_file_to_research_origin(temp_path)[:-1] + ".txt"
             if new_title.startswith('Информации о'):
-                new_title = file.filename
+                new_title = original_name
+
+        new_title = clean_filename(new_title) or original_name
 
         if db_sess.query(Book).filter(Book.title == new_title).first():
             return render_template(
@@ -201,7 +207,7 @@ def add_book():
                 message='Книга с таким названием уже есть'
             )
 
-        final_path = os.path.join('files', new_title)
+        final_path = os.path.join(BOOKS_DIR, new_title)
         with open(final_path, 'w', encoding='utf-8') as f:
             f.write(text)
 
@@ -209,7 +215,7 @@ def add_book():
 
         book = Book(
             title=new_title,
-            filepath=final_path
+            filepath='files/' + new_title
         )
         db_sess.add(book)
         db_sess.commit()
@@ -251,12 +257,15 @@ def watch_book(id):
     db_sess = db_session.create_session()
     book = db_sess.query(Book).filter(Book.id == id).first()
     if book:
-        with open(book.filepath, 'rb') as f:
+        book_path = resolve_book_path(book.filepath)
+        if not os.path.exists(book_path):
+            abort(404)
+        with open(book_path, 'rb') as f:
             text = decode_text(f.read())
         return render_template('watch_book.html', book=book, text=text)
 
 
 if __name__ == '__main__':
-    db_session.global_init("db/knigniypomoschnik.db")
+    db_session.global_init(DB_PATH)
     search_or_create_admin()
     socketio.run(app, host='127.0.0.1', port=8804, debug=True)
